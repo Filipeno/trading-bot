@@ -19,6 +19,37 @@ STRATEGY_LABELS = {
     "llm": "LLM — Claude reads the chart",
 }
 
+# One-line plain-English explanation of how each strategy decides to buy/sell.
+STRATEGY_DESC = {
+    "ema_crossover": "Buys when a fast moving average crosses above a slow one (uptrend "
+                     "starting) and sells when it crosses back below. Classic trend-following.",
+    "macd": "Tracks momentum via the MACD histogram. Buys when momentum flips positive, "
+            "sells when it flips negative.",
+    "bollinger_bands": "Assumes price snaps back to its average. Buys when price dips below the "
+                       "lower band (oversold), sells when it pokes above the upper band.",
+    "breakout": "Buys when price breaks above its highest high of the last N bars (a breakout) "
+                "and sells when it breaks below the recent low.",
+    "rsi": "Uses the RSI gauge of overbought/oversold. Buys as RSI climbs out of oversold, "
+           "sells as it falls out of overbought.",
+    "stochastic": "Momentum oscillator. Buys when the fast line crosses up through the slow line "
+                  "in the oversold zone, sells on the opposite cross when overbought.",
+    "vwap": "Uses the volume-weighted average price (what traders actually paid). Buys when price "
+            "crosses above VWAP, sells when it crosses below. Popular for intraday.",
+    "supertrend": "An ATR-based trend filter that adapts to volatility. Buys when the trend flips "
+                  "up, sells when it flips down. Well-suited to trending crypto.",
+    "llm": "Sends a snapshot of the chart to an AI model each bar and follows its BUY/SELL/HOLD "
+           "call. Costs one API call per bar — and has no proven edge.",
+}
+
+# Plain-English glossary for the result metrics.
+METRIC_GLOSSARY = {
+    "Return": "Total % change in your portfolio over the whole test.",
+    "Sharpe": "Reward-for-risk. Higher = smoother gains. >1 is decent, <0 means it lost money.",
+    "Max Drawdown": "The worst peak-to-trough drop along the way. How much pain you'd have sat through.",
+    "Win Rate": "Share of trades that closed in profit. High win rate ≠ profitable if losses are big.",
+    "# Trades": "How many round-trip trades the strategy made. Very high = lots of fees.",
+}
+
 # Strategies usable in each context.
 BACKTESTABLE = ["ema_crossover", "macd", "bollinger_bands", "breakout",
                 "rsi", "stochastic", "vwap", "supertrend"]

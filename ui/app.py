@@ -524,8 +524,10 @@ Create an API key on **{exchange_id.title()}** with trading permissions and past
 # ══════════════════════════════════════════════════════════════════════════════
 from strategy_specs import (
     BACKTESTABLE,
+    METRIC_GLOSSARY,
     OPTIMIZABLE,
     PAPER_TRADE,
+    STRATEGY_DESC,
     STRATEGY_LABELS as _STRATEGY_LABELS,
     render_params,
     short_label,
@@ -553,7 +555,9 @@ with tab_backtest:
             options=BACKTESTABLE,   # LLM excluded — a backtest = one paid call per candle
             format_func=lambda k: _STRATEGY_LABELS[k],
             index=0,
+            help="The rule that decides when to buy and sell. Each one is explained below.",
         )
+        st.caption(f"ℹ️ {STRATEGY_DESC.get(strategy_key, '')}")
 
         _bt_tfs = _timeframes_for(_current_asset())
         timeframe = st.selectbox(
@@ -561,17 +565,28 @@ with tab_backtest:
             options=_bt_tfs,
             index=_bt_tfs.index("15m") if "15m" in _bt_tfs else 0,
             format_func=lambda tf: _TIMEFRAME_LABELS.get(tf, tf),
+            help="How much time each candle covers. Shorter = more trades & noise; "
+                 "longer = slower, steadier signals.",
         )
 
         candle_default = 500 if timeframe in ("1m", "5m", "15m") else 1000
         n_candles = st.slider(
             "History (candles)", 100, 5000, candle_default, 100,
-            help=f"Each candle = {_TIMEFRAME_LABELS.get(timeframe, timeframe)}. "
-                 "Pages past the API cap automatically.",
+            help=f"How far back to test. Each candle = {_TIMEFRAME_LABELS.get(timeframe, timeframe)}. "
+                 "More candles = a longer, more trustworthy test.",
+        )
+
+        # ── Starting budget (prominent) ───────────────────────────────────
+        capital = st.number_input(
+            "💰 Starting budget ($)", min_value=100, max_value=1_000_000,
+            value=10_000, step=100,
+            help="The pretend cash you begin with. All results scale from this — "
+                 "try your real intended amount to see realistic dollar outcomes.",
         )
 
         # ── Strategy-specific params (dynamic) ────────────────────────────
         st.markdown("**Strategy parameters**")
+        st.caption("Fine-tune the strategy. Hover the ⓘ on each for what it does.")
         bt_params = render_params(st, strategy_key, "bt")
         can_run, msg = validate(strategy_key, bt_params)
         if not can_run:
@@ -580,16 +595,29 @@ with tab_backtest:
 
         # ── Leverage ──────────────────────────────────────────────────────
         st.markdown("**Leverage & exits**")
-        leverage = st.slider("Leverage (1 = spot, no leverage)", 1, 10, 1, key="bt_lev")
+        leverage = st.slider(
+            "Leverage", 1, 10, 1, key="bt_lev",
+            help="1× = spot (you can't lose more than you put in). Higher multiplies BOTH "
+                 "gains and losses — and adds a liquidation risk. Keep at 1 unless you know why.",
+        )
 
-        with st.expander("Advanced (fees & risk)"):
-            capital   = st.number_input("Starting capital ($)", 1000, 500_000, 10_000, 1000)
-            fee       = st.number_input("Fee rate", 0.0, 0.01, 0.001, 0.0001, format="%.4f",
-                                        help="Binance taker fee = 0.001 (0.1%)")
-            slip      = st.number_input("Slippage", 0.0, 0.005, 0.0005, 0.0001, format="%.4f")
-            sl_pct    = st.number_input("Stop-loss %", 0.5, 20.0, 2.0, 0.5, format="%.1f") / 100
-            tp_pct    = st.number_input("Take-profit %", 0.5, 40.0, 4.0, 0.5, format="%.1f") / 100
-            trail_pct = st.number_input("Trailing stop % (0 = off)", 0.0, 20.0, 0.0, 0.5, format="%.1f") / 100
+        with st.expander("Exit rules & costs (advanced)"):
+            sl_pct    = st.number_input(
+                "Stop-loss %", 0.5, 20.0, 2.0, 0.5, format="%.1f",
+                help="Auto-sell if price falls this far below entry — caps each loss.") / 100
+            tp_pct    = st.number_input(
+                "Take-profit %", 0.5, 40.0, 4.0, 0.5, format="%.1f",
+                help="Auto-sell once price rises this far above entry — locks in a win.") / 100
+            trail_pct = st.number_input(
+                "Trailing stop % (0 = off)", 0.0, 20.0, 0.0, 0.5, format="%.1f",
+                help="Sell if price drops this far from its highest point since you bought. "
+                     "Lets winners run while protecting gains.") / 100
+            fee       = st.number_input(
+                "Fee rate", 0.0, 0.01, 0.001, 0.0001, format="%.4f",
+                help="Trading fee per order. 0.001 = 0.1% (typical exchange taker fee).")
+            slip      = st.number_input(
+                "Slippage", 0.0, 0.005, 0.0005, 0.0001, format="%.4f",
+                help="Realistic gap between expected and actual fill price.")
 
         _leverage_warning(leverage, sl_pct)
 
@@ -678,16 +706,70 @@ with tab_backtest:
                     result = engine.run(df, strat)
                     m = result.metrics
 
-                    # Metrics row
+                    # ── Headline result ────────────────────────────────────
+                    final_val = m["final_equity"]
+                    profit = final_val - capital
+                    bh_ret = (df["close"].iloc[-1] / df["close"].iloc[0] - 1) * 100
+                    st.markdown(
+                        f"### {'🟢' if profit >= 0 else '🔴'} ${capital:,.0f} → "
+                        f"**${final_val:,.0f}**  ({m['total_return_pct']:+.1f}%)"
+                    )
+                    st.caption(
+                        f"Buy & hold over the same period: {bh_ret:+.1f}% · "
+                        f"{'✅ strategy beat holding' if m['total_return_pct'] > bh_ret else '⚠️ just holding did better'}"
+                    )
+
+                    # Metrics row + glossary
                     mc1, mc2, mc3, mc4, mc5 = st.columns(5)
                     mc1.metric("Return", f"{m['total_return_pct']:+.1f}%")
                     mc2.metric("Sharpe", f"{m['sharpe_ratio']:.2f}")
                     mc3.metric("Max Drawdown", f"{m['max_drawdown_pct']:.1f}%")
                     mc4.metric("Win Rate", f"{m['win_rate_pct']:.0f}%")
                     mc5.metric("# Trades", str(m['n_trades']))
+                    with st.expander("❓ What do these numbers mean?"):
+                        for _k, _v in METRIC_GLOSSARY.items():
+                            st.markdown(f"- **{_k}** — {_v}")
 
-                    # Equity curve
-                    lev_label = f" {leverage}×lev" if leverage > 1 else ""
+                    lev_label = f" · {leverage}×" if leverage > 1 else ""
+
+                    # ── Price chart with trades marked ─────────────────────
+                    price_fig = go.Figure()
+                    price_fig.add_trace(go.Candlestick(
+                        x=df.index, open=df["open"], high=df["high"],
+                        low=df["low"], close=df["close"], name=_current_symbol(),
+                        increasing_line_color="#26a69a", decreasing_line_color="#ef5350",
+                        showlegend=False,
+                    ))
+                    if result.trades:
+                        price_fig.add_trace(go.Scatter(
+                            x=[t.entry_time for t in result.trades],
+                            y=[t.entry_price for t in result.trades],
+                            mode="markers", name="Buy",
+                            marker=dict(symbol="triangle-up", size=12, color="#22cc88",
+                                        line=dict(width=1, color="#0b3")),
+                            hovertext=[f"Buy @ {t.entry_price:,.2f}" for t in result.trades],
+                        ))
+                        _win = lambda t: t.pnl > 0
+                        price_fig.add_trace(go.Scatter(
+                            x=[t.exit_time for t in result.trades],
+                            y=[t.exit_price for t in result.trades],
+                            mode="markers", name="Sell",
+                            marker=dict(symbol="triangle-down", size=12,
+                                        color=["#ffd166" if _win(t) else "#ff6b6b" for t in result.trades],
+                                        line=dict(width=1, color="#900")),
+                            hovertext=[f"Sell @ {t.exit_price:,.2f} ({t.pnl:+.0f}$)" for t in result.trades],
+                        ))
+                    price_fig.update_layout(
+                        title=f"{_current_symbol()} price & trades — {strategy_label}{lev_label}",
+                        height=380, margin=dict(l=0, r=0, t=36, b=0),
+                        xaxis_rangeslider_visible=False,
+                        legend=dict(orientation="h", y=1.12),
+                        hovermode="x unified",
+                    )
+                    st.plotly_chart(price_fig, use_container_width=True)
+                    st.caption("🔺 green = buy · 🔻 yellow = winning sell · 🔻 red = losing sell")
+
+                    # ── Portfolio value curve ──────────────────────────────
                     fig = go.Figure()
                     fig.add_trace(go.Scatter(
                         x=result.equity_curve.index,
@@ -698,35 +780,26 @@ with tab_backtest:
                         fill="tozeroy",
                         fillcolor="rgba(0,212,170,0.07)",
                     ))
-                    if result.trades:
-                        entries = [t.entry_time for t in result.trades]
-                        entry_vals = [result.equity_curve.asof(t) for t in entries]
-                        exits = [t.exit_time for t in result.trades]
-                        exit_vals = [result.equity_curve.asof(t) for t in exits]
-                        fig.add_trace(go.Scatter(
-                            x=entries, y=entry_vals, mode="markers",
-                            marker=dict(symbol="triangle-up", size=10, color="#22cc88"),
-                            name="Buy",
-                        ))
-                        fig.add_trace(go.Scatter(
-                            x=exits, y=exit_vals, mode="markers",
-                            marker=dict(symbol="triangle-down", size=10, color="#ff6b6b"),
-                            name="Sell",
-                        ))
+                    fig.add_hline(y=capital, line_dash="dot", line_color="#888",
+                                  annotation_text="starting budget", annotation_position="bottom right")
                     fig.update_layout(
-                        title=f"Equity — {strategy_label}{lev_label}  "
-                              f"({df.index[0].date()} → {df.index[-1].date()})",
-                        yaxis_title="Portfolio Value ($)",
-                        height=340,
-                        margin=dict(l=0, r=0, t=40, b=0),
-                        legend=dict(orientation="h", y=1.12),
+                        title="Portfolio value over time",
+                        yaxis_title="Portfolio ($)",
+                        height=300,
+                        margin=dict(l=0, r=0, t=36, b=0),
                         hovermode="x unified",
+                        showlegend=False,
                     )
                     st.plotly_chart(fig, use_container_width=True)
 
                     # Trade table
                     if result.trades:
                         st.caption(f"All {len(result.trades)} trades")
+                        _reason_label = {
+                            "signal": "📊 signal", "stop_loss": "🛑 stop-loss",
+                            "take_profit": "🎯 take-profit", "trailing_stop": "📉 trailing",
+                            "liquidation": "💀 liquidated",
+                        }
                         trade_rows = [
                             {
                                 "Entry": t.entry_time.strftime("%b %d %H:%M"),
@@ -735,6 +808,7 @@ with tab_backtest:
                                 "Exit $": f"{t.exit_price:,.0f}",
                                 "P&L $": f"{t.pnl:+.2f}",
                                 "P&L %": f"{t.pnl_pct:+.2%}",
+                                "Closed by": _reason_label.get(getattr(t, "exit_reason", "signal"), "📊 signal"),
                                 "Result": "✅ Win" if t.pnl > 0 else "❌ Loss",
                             }
                             for t in result.trades
