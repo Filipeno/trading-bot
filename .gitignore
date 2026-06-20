@@ -1,0 +1,30 @@
+# Secrets — never commit
+.env
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+.venv/
+venv/
+*.egg
+
+# Logs (keep structure, not content)
+logs/*.log
+logs/*.log.*
+
+# Runtime state written by the UI / paper trader
+config/ui_overrides.json
+.trader.pid
+
+# pytest / coverage
+.pytest_cache/
+.coverage
+htmlcov/
+
+# IDE
+.vscode/
+.idea/
+*.DS_Store

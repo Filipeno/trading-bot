@@ -1,0 +1,13 @@
+# Runtime deps for hosting the Streamlit app (e.g. Streamlit Community Cloud).
+# The LLM "Anthropic" provider is optional and omitted here — the Mammouth
+# (OpenAI-compatible) provider only needs `requests`, which is included.
+streamlit>=1.35
+pandas>=2.2
+numpy>=1.26
+plotly>=5.20
+ccxt>=4.3
+yfinance>=0.2
+feedparser>=6.0
+requests>=2.31
+python-dotenv>=1.0
+psutil>=5.9

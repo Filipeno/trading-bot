@@ -1,0 +1,120 @@
+# ── Market / asset class ──────────────────────────────────────────────────
+# "crypto" → data via ccxt (Binance/Kraken/…).  "stocks" → data via yfinance
+# (free, no key, ~15 min delayed; needs `pip install yfinance`).
+# For stocks set exchange.symbol to a ticker like "AAPL" and use a supported
+# stock timeframe: 1m, 5m, 15m, 30m, 1h, 1d (no 4h on stocks).
+[market]
+asset_class = "crypto"
+
+[exchange]
+id = "binance"         # ccxt exchange id; sandbox mode toggled below
+testnet = true
+symbol = "BTC/USDT"    # crypto pair, or a stock ticker like "AAPL" when asset_class = "stocks"
+timeframe = "15m"      # 15m recommended for day-trading strategies (MACD, BB, Breakout)
+# env vars to read API credentials from (change when switching exchanges)
+api_key_env = "BINANCE_TESTNET_API_KEY"
+secret_env  = "BINANCE_TESTNET_SECRET"
+
+# ── Switching to Kraken for real money (EU) ──────────────────────────────
+# id           = "kraken"
+# testnet      = false
+# symbol       = "BTC/USD"
+# api_key_env  = "KRAKEN_API_KEY"
+# secret_env   = "KRAKEN_SECRET"
+
+[strategy]
+# Strategy to use:
+#   ema_crossover | macd | bollinger_bands | breakout
+#   rsi | stochastic | vwap | supertrend | llm
+# (You can also pick the strategy + params live from the UI Paper Trade tab.)
+name = "ema_crossover"
+
+# ── EMA crossover ────────────────────────────────────────────────────────
+fast_period = 20       # EMA fast window
+slow_period = 50       # EMA slow window
+
+# ── MACD ─────────────────────────────────────────────────────────────────
+# Tip: 6/13/4 produces more signals on 15m bars than the classic 12/26/9
+macd_fast   = 12
+macd_slow   = 26
+macd_signal = 9
+
+# ── Bollinger Bands ───────────────────────────────────────────────────────
+bb_period  = 20
+bb_std_dev = 2.0       # wider (2.5) = fewer but higher-confidence signals
+
+# ── Breakout (Donchian channel) ───────────────────────────────────────────
+breakout_period = 20   # bars to look back for the breakout high/low
+
+# ── RSI (mean-reversion) ──────────────────────────────────────────────────
+rsi_period     = 14
+rsi_oversold   = 30
+rsi_overbought = 70
+
+# ── Stochastic oscillator ─────────────────────────────────────────────────
+stoch_k_period   = 14
+stoch_d_period   = 3
+stoch_oversold   = 20
+stoch_overbought = 80
+
+# ── VWAP (rolling) ────────────────────────────────────────────────────────
+vwap_period = 20
+
+# ── Supertrend (ATR channel) ──────────────────────────────────────────────
+supertrend_period     = 10
+supertrend_multiplier = 3.0
+
+# ── LLM strategy (name = "llm") ───────────────────────────────────────────
+# An LLM reads the chart numbers each bar and decides BUY/SELL/HOLD.
+# COST WARNING: one API call per bar. A backtest = one call PER candle, which
+# can be thousands of calls. Use it for PAPER TRADING, not bulk backtests.
+# It will NOT reliably beat the market — validate with the Reality Check first.
+#
+# Provider: "anthropic" (needs `pip install anthropic` + ANTHROPIC_API_KEY)
+#       or  "mammouth"  (OpenAI-compatible HTTP; needs MAMMOUTH_API_KEY).
+llm_provider       = "mammouth"
+# --- Mammouth.ai (OpenAI-compatible) ---
+# VERIFY base_url + model against your Mammouth dashboard — these are best-guess
+# defaults. If calls fail, the base_url or model name is the thing to fix.
+llm_base_url       = "https://api.mammouth.ai/v1"
+llm_model          = "gpt-4o"   # see https://api.mammouth.ai/public/models for the full list
+llm_api_key_env    = "MAMMOUTH_API_KEY"
+# --- Anthropic alternative (set llm_provider = "anthropic") ---
+# llm_model       = "claude-haiku-4-5-20251001"
+# llm_api_key_env = "ANTHROPIC_API_KEY"
+llm_lookback       = 30      # bars of history summarized for the model
+llm_min_confidence = 0.55    # below this, a BUY/SELL is downgraded to HOLD
+
+[risk]
+max_position_pct     = 0.10   # fraction of free cash used as MARGIN per trade
+stop_loss_pct        = 0.02   # exit if price falls 2% below entry
+take_profit_pct      = 0.04   # exit if price rises 4% above entry
+trailing_stop_pct    = 0.0    # exit if price drops this % from its peak since
+                               # entry. 0 = disabled. e.g. 0.015 = 1.5% trailing.
+                               # Locks in gains; works alongside stop_loss_pct.
+daily_loss_limit_pct = 0.05   # halt if daily equity loss exceeds 5%
+leverage             = 1      # 1 = spot (no leverage). 2–10 = futures/margin.
+                               # WARNING: 2% SL at 5× leverage = 10% capital loss per trade.
+
+[backtest]
+initial_capital = 10000.0    # USD
+fee_rate        = 0.001      # 0.1% taker fee (Binance standard)
+slippage_pct    = 0.0005     # 0.05% slippage per fill
+
+# ── Optional: News / Sentiment ──────────────────────────────────────────────
+# All phases work with enabled = false (the default). Set to true only after
+# Phases 1–3 are validated and you have a CRYPTOPANIC_API_KEY in .env.
+[news]
+enabled                = false
+source                 = "rss"                  # "rss" (free, no key) or "cryptopanic"
+# api_key_env          = "CRYPTOPANIC_API_KEY"  # only needed when source = "cryptopanic"
+ingestion_lag_seconds  = 60     # backtest lag — simulate processing delay
+lookback_minutes       = 60     # only consider news from the past N minutes
+sentiment_threshold    = 0.30   # |score| must exceed this to generate BUY/SELL
+min_confidence         = 0.30   # keyword hits needed before we trust the score
+
+# News-event halt — active even when enabled = false (pure risk guard).
+# After a high-impact headline, new entries are paused for this many minutes.
+# Exits (SL/TP) are never suppressed by this halt.
+event_halt_minutes     = 5
+high_impact_threshold  = 0.70   # |score| above this = high impact

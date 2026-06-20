@@ -1,0 +1,40 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "trading-bot"
+version = "0.1.0"
+requires-python = ">=3.11"
+dependencies = [
+    "ccxt>=4.3",
+    "pandas>=2.2",
+    "numpy>=1.26",
+    "python-dotenv>=1.0",
+    "requests>=2.31",
+    "feedparser>=6.0",
+    "streamlit>=1.35",
+    "plotly>=5.20",
+    "psutil>=5.9",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.23",
+]
+# LLM strategy (name = "llm"). anthropic only needed for the Anthropic provider;
+# the Mammouth/OpenAI-compatible provider uses requests (already a core dep).
+llm = [
+    "anthropic>=0.40",
+]
+# Stock market data (asset_class = "stocks").
+stocks = [
+    "yfinance>=0.2",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/trading_bot"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
