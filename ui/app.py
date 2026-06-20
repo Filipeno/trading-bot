@@ -867,7 +867,10 @@ with tab_reality:
             help="More history = more market regimes = more reliable verdict. "
                  "Pages past the exchange's per-request cap automatically.",
         )
-        rc_folds = st.slider("Walk-forward folds", 3, 8, 6)
+        rc_folds = st.slider(
+            "Walk-forward folds", 3, 8, 6,
+            help="How many tune-then-test rounds. The history is split into this many "
+                 "chunks; each is tuned on the past and tested on the next unseen chunk.")
         rc_leverage = st.slider("Leverage", 1, 10, 1,
                                 help="Kept separate from your trading config. 1× strongly recommended.")
         if rc_leverage > 1:
@@ -880,6 +883,13 @@ with tab_reality:
             format_func=lambda k: _STRATEGY_LABELS.get(k, k),
             help="Pick which strategies to put through the walk-forward test.",
         )
+        with st.expander("ℹ️ How to read this"):
+            st.markdown(
+                "- **In-sample** = how it did on data it was *tuned on* (always flattering).\n"
+                "- **Out-of-sample (OOS)** = how it did on the *next, unseen* data — the only honest number.\n"
+                "- A big drop from in-sample to OOS = **overfitting**.\n"
+                "- **Beat Buy&Hold** = did active trading beat simply holding? Usually not."
+            )
         st.caption("LLM is excluded here — walk-forward would make thousands of paid API calls.")
 
         rc_run = st.button("🔬 Run Reality Check", type="primary", use_container_width=True,
@@ -932,6 +942,24 @@ with tab_reality:
                     summary_rows.sort(
                         key=lambda r: float(r["OOS mean/fold"].rstrip("%")), reverse=True
                     )
+
+                    # ── Visual: out-of-sample mean return per strategy ──────
+                    _ranked = sorted(reports.items(), key=lambda kv: kv[1].oos_mean_return)
+                    _names = [_STRATEGY_LABELS.get(n, n).split(" (")[0] for n, _ in _ranked]
+                    _vals = [r.oos_mean_return for _, r in _ranked]
+                    bar = go.Figure(go.Bar(
+                        x=_vals, y=_names, orientation="h",
+                        marker_color=["#26a69a" if v > 0 else "#ef5350" for v in _vals],
+                        text=[f"{v:+.2f}%" for v in _vals], textposition="outside",
+                    ))
+                    bar.update_layout(
+                        title="Out-of-sample mean return per fold (the honest score)",
+                        height=70 + 38 * len(_names), margin=dict(l=0, r=0, t=36, b=0),
+                        xaxis_title="% per fold (higher = better; <0 = lost money)",
+                    )
+                    bar.add_vline(x=0, line_color="#888")
+                    st.plotly_chart(bar, use_container_width=True)
+
                     st.dataframe(pd.DataFrame(summary_rows), hide_index=True, use_container_width=True)
 
                     # ── Passive benchmarks over the full period ─────────────
@@ -982,10 +1010,25 @@ with tab_reality:
                                 }
                                 for f in rep.folds
                             ]
+                            # Visual: in-sample vs out-of-sample per fold
+                            _folds = [f"Fold {f.fold}" for f in rep.folds]
+                            ovf = go.Figure()
+                            ovf.add_trace(go.Bar(
+                                x=_folds, y=[f.in_sample_metric for f in rep.folds],
+                                name="In-sample (tuned)", marker_color="#7e57c2"))
+                            ovf.add_trace(go.Bar(
+                                x=_folds, y=[f.out_of_sample["total_return_pct"] for f in rep.folds],
+                                name="Out-of-sample (real)", marker_color="#26a69a"))
+                            ovf.update_layout(
+                                barmode="group", height=240, margin=dict(l=0, r=0, t=10, b=0),
+                                legend=dict(orientation="h", y=1.15), yaxis_title="% return",
+                            )
+                            ovf.add_hline(y=0, line_color="#888")
+                            st.plotly_chart(ovf, use_container_width=True)
                             st.dataframe(pd.DataFrame(fold_rows), hide_index=True, use_container_width=True)
                             st.caption(
-                                "Notice how strong **in-sample** numbers often collapse **out-of-sample** — "
-                                "that gap is overfitting, and it's exactly what loses real money."
+                                "Notice how the purple **in-sample** bars often tower over the green "
+                                "**out-of-sample** ones — that gap is overfitting, and it's exactly what loses real money."
                             )
 
                 except Exception as exc:
@@ -1063,6 +1106,7 @@ with tab_paper:
                 key="pt_strategy",
                 label_visibility="collapsed",
             )
+            st.caption(f"ℹ️ {STRATEGY_DESC.get(pt_strategy, '')}")
             _pt_tfs = _timeframes_for(_current_asset())
             pt_timeframe = st.selectbox(
                 "Timeframe",
@@ -1070,6 +1114,7 @@ with tab_paper:
                 index=_pt_tfs.index("15m") if "15m" in _pt_tfs else 0,
                 format_func=lambda tf: _TIMEFRAME_LABELS.get(tf, tf),
                 key="pt_tf",
+                help="The trader checks for a new signal once per candle of this size.",
             )
             pt_params = render_params(st, pt_strategy, "pt")
             pt_ok, pt_msg = validate(pt_strategy, pt_params)
@@ -1109,11 +1154,21 @@ with tab_paper:
 
         with risk_col:
             st.markdown("**Risk & leverage**")
-            pt_leverage = st.slider("Leverage", 1, 10, 1, key="pt_lev")
-            pt_sl = st.number_input("Stop-loss %", 0.5, 20.0, 2.0, 0.5, key="pt_sl") / 100
-            pt_tp = st.number_input("Take-profit %", 0.5, 40.0, 4.0, 0.5, key="pt_tp") / 100
-            pt_trail = st.number_input("Trailing stop % (0 = off)", 0.0, 20.0, 0.0, 0.5, key="pt_trail") / 100
-            pt_maxpos = st.slider("Max position % of capital", 5, 100, 10, 5, key="pt_maxpos") / 100
+            pt_leverage = st.slider(
+                "Leverage", 1, 10, 1, key="pt_lev",
+                help="1× = no borrowing. Higher multiplies gains AND losses; keep at 1 unless sure.")
+            pt_sl = st.number_input(
+                "Stop-loss %", 0.5, 20.0, 2.0, 0.5, key="pt_sl",
+                help="Auto-close a position once it's down this much — your safety net per trade.") / 100
+            pt_tp = st.number_input(
+                "Take-profit %", 0.5, 40.0, 4.0, 0.5, key="pt_tp",
+                help="Auto-close once a position is up this much — banks the win.") / 100
+            pt_trail = st.number_input(
+                "Trailing stop % (0 = off)", 0.0, 20.0, 0.0, 0.5, key="pt_trail",
+                help="Follows the price up and sells if it falls this far from the peak. Protects profits.") / 100
+            pt_maxpos = st.slider(
+                "Max position % of capital", 5, 100, 10, 5, key="pt_maxpos",
+                help="How much of your balance a single trade can use. Lower = safer.") / 100
             _leverage_warning(pt_leverage, pt_sl)
 
         _ready = (not needs_exchange_keys or has_keys) and pt_ok and llm_key_ok
