@@ -409,7 +409,7 @@ Create an API key on **{exchange_id.title()}** with trading permissions and past
 
     col_save, col_test, _ = st.columns([1, 1, 2])
     with col_save:
-        if st.button("💾 Save Keys", use_container_width=True, disabled=HOSTED):
+        if st.button("💾 Save Keys", width="stretch", disabled=HOSTED):
             if not api_key_input or not secret_input:
                 st.error("Please enter both the API key and secret.")
             else:
@@ -421,7 +421,7 @@ Create an API key on **{exchange_id.title()}** with trading permissions and past
                 st.rerun()
 
     with col_test:
-        if st.button("🔌 Test Connection", use_container_width=True, type="primary"):
+        if st.button("🔌 Test Connection", width="stretch", type="primary"):
             with st.spinner("Connecting…"):
                 try:
                     from trading_bot.data.market import make_feed
@@ -622,7 +622,7 @@ with tab_backtest:
         _leverage_warning(leverage, sl_pct)
 
         run_btn = st.button(
-            "▶ Run Backtest", type="primary", use_container_width=True,
+            "▶ Run Backtest", type="primary", width="stretch",
             disabled=not can_run,
         )
 
@@ -644,7 +644,7 @@ with tab_backtest:
             if not _llm_key:
                 st.caption(f"⚠️ No `{_llm_keyname}` — add it in the Setup tab "
                            f"({'session-only' if HOSTED else '.env'}).")
-            ask_llm = st.button("🤖 Analyze latest bars", use_container_width=True,
+            ask_llm = st.button("🤖 Analyze latest bars", width="stretch",
                                 disabled=not _llm_key)
 
     # ── Results ───────────────────────────────────────────────────────────
@@ -766,7 +766,7 @@ with tab_backtest:
                         legend=dict(orientation="h", y=1.12),
                         hovermode="x unified",
                     )
-                    st.plotly_chart(price_fig, use_container_width=True)
+                    st.plotly_chart(price_fig, width="stretch")
                     st.caption("🔺 green = buy · 🔻 yellow = winning sell · 🔻 red = losing sell")
 
                     # ── Portfolio value curve ──────────────────────────────
@@ -790,7 +790,7 @@ with tab_backtest:
                         hovermode="x unified",
                         showlegend=False,
                     )
-                    st.plotly_chart(fig, use_container_width=True)
+                    st.plotly_chart(fig, width="stretch")
 
                     # Trade table
                     if result.trades:
@@ -816,7 +816,7 @@ with tab_backtest:
                         st.dataframe(
                             pd.DataFrame(trade_rows),
                             hide_index=True,
-                            use_container_width=True,
+                            width="stretch",
                         )
                     else:
                         st.info("No trades were generated in this period.")
@@ -892,7 +892,7 @@ with tab_reality:
             )
         st.caption("LLM is excluded here — walk-forward would make thousands of paid API calls.")
 
-        rc_run = st.button("🔬 Run Reality Check", type="primary", use_container_width=True,
+        rc_run = st.button("🔬 Run Reality Check", type="primary", width="stretch",
                            disabled=not rc_selected)
         st.caption("Takes ~10–30s — it runs hundreds of backtests.")
 
@@ -958,9 +958,9 @@ with tab_reality:
                         xaxis_title="% per fold (higher = better; <0 = lost money)",
                     )
                     bar.add_vline(x=0, line_color="#888")
-                    st.plotly_chart(bar, use_container_width=True)
+                    st.plotly_chart(bar, width="stretch")
 
-                    st.dataframe(pd.DataFrame(summary_rows), hide_index=True, use_container_width=True)
+                    st.dataframe(pd.DataFrame(summary_rows), hide_index=True, width="stretch")
 
                     # ── Passive benchmarks over the full period ─────────────
                     from trading_bot.backtest.dca import simulate_dca
@@ -971,7 +971,7 @@ with tab_reality:
                         {"Passive benchmark": "DCA (daily $50)", "Return over full period": f"{_dca.return_pct:+.1f}%"},
                     ])
                     st.caption("Passive benchmarks — the honest comparison (no trading, no tuning):")
-                    st.dataframe(bench, hide_index=True, use_container_width=True)
+                    st.dataframe(bench, hide_index=True, width="stretch")
                     if max(bh, _dca.return_pct) >= max((reports[n].oos_total_compounded_pct for n in reports), default=0):
                         st.caption("↳ Passive accumulation beat the active strategies here — the usual outcome.")
 
@@ -1024,8 +1024,8 @@ with tab_reality:
                                 legend=dict(orientation="h", y=1.15), yaxis_title="% return",
                             )
                             ovf.add_hline(y=0, line_color="#888")
-                            st.plotly_chart(ovf, use_container_width=True)
-                            st.dataframe(pd.DataFrame(fold_rows), hide_index=True, use_container_width=True)
+                            st.plotly_chart(ovf, width="stretch")
+                            st.dataframe(pd.DataFrame(fold_rows), hide_index=True, width="stretch")
                             st.caption(
                                 "Notice how the purple **in-sample** bars often tower over the green "
                                 "**out-of-sample** ones — that gap is overfitting, and it's exactly what loses real money."
@@ -1075,7 +1075,7 @@ with tab_paper:
             f"Strategy: **{_STRATEGY_LABELS.get(active, active)}**{lev_badge}  |  "
             f"Symbol: {_pt_exc['symbol']}  |  Timeframe: {active_tf}"
         )
-        if st.button("⏹  Stop Paper Trader", type="primary", use_container_width=True):
+        if st.button("⏹  Stop Paper Trader", type="primary", width="stretch"):
             _stop_trader()
             st.rerun()
     elif HOSTED:
@@ -1173,7 +1173,7 @@ with tab_paper:
 
         _ready = (not needs_exchange_keys or has_keys) and pt_ok and llm_key_ok
         clicked = st.button(
-            "▶  Start Paper Trader", type="primary", use_container_width=True,
+            "▶  Start Paper Trader", type="primary", width="stretch",
             disabled=not _ready,
         )
         if clicked and _ready:
