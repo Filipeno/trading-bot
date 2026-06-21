@@ -7,6 +7,7 @@ Stop with Ctrl-C or SIGTERM. All signals and simulated trades are appended to
 logs/trades.log for later comparison against backtest expectations.
 """
 
+import csv
 import json
 import logging
 import os
@@ -32,7 +33,35 @@ _CONFIG_PATH = _ROOT / "config" / "settings.toml"
 # Optional overrides written by the UI Paper Trade tab. Lets you choose the
 # strategy, params, leverage and stops from the app without editing the TOML.
 _OVERRIDES_PATH = _ROOT / "config" / "ui_overrides.json"
+# Machine-readable history the UI reads to draw real charts (equity, price, trades).
+_HISTORY_PATH = _ROOT / "logs" / "paper_history.csv"
+_ORDERS_PATH = _ROOT / "logs" / "paper_orders.csv"
 logger = logging.getLogger(__name__)
+
+
+def _init_history(symbol: str, timeframe: str, strategy_name: str,
+                  initial_capital: float, leverage: int) -> None:
+    """Start a fresh history for this session (overwrites the previous run)."""
+    _HISTORY_PATH.parent.mkdir(parents=True, exist_ok=True)
+    with open(_HISTORY_PATH, "w", newline="", encoding="utf-8") as f:
+        w = csv.writer(f)
+        w.writerow(["# meta", symbol, timeframe, strategy_name,
+                    f"{initial_capital}", f"{leverage}"])
+        w.writerow(["timestamp", "price", "equity", "cash", "position"])
+    with open(_ORDERS_PATH, "w", newline="", encoding="utf-8") as f:
+        csv.writer(f).writerow(["timestamp", "side", "price", "size", "fee"])
+
+
+def _record_point(ts, price: float, equity: float, cash: float, position: float) -> None:
+    with open(_HISTORY_PATH, "a", newline="", encoding="utf-8") as f:
+        csv.writer(f).writerow([ts.isoformat(), f"{price:.6f}", f"{equity:.6f}",
+                                f"{cash:.6f}", f"{position:.8f}"])
+
+
+def _record_order(ts, side: str, price: float, size: float, fee: float) -> None:
+    with open(_ORDERS_PATH, "a", newline="", encoding="utf-8") as f:
+        csv.writer(f).writerow([ts.isoformat(), side, f"{price:.6f}",
+                                f"{size:.8f}", f"{fee:.6f}"])
 
 
 def _deep_merge(base: dict, override: dict) -> dict:
@@ -137,6 +166,8 @@ def run() -> None:
 
     strategy_name = config.get("strategy", {}).get("name", "ema_crossover")
     asset = config.get("market", {}).get("asset_class", "crypto")
+    _init_history(symbol, timeframe, strategy_name,
+                  config["backtest"]["initial_capital"], leverage)
     logger.info(
         "Paper trader started | %s %s (%s) | strategy=%s | leverage=%dx | news=%s",
         symbol, timeframe, asset, strategy_name, leverage,
@@ -182,6 +213,15 @@ def run() -> None:
                     executor.get_equity(symbol, current_price),
                     executor.get_position(symbol),
                 )
+                _record_order(ts, order.side, order.fill_price, order.size, order.fee)
+
+            # Record a real portfolio snapshot every bar for the UI charts.
+            _record_point(
+                ts, current_price,
+                executor.get_equity(symbol, current_price),
+                executor.get_balance(),
+                executor.get_position(symbol),
+            )
 
             time.sleep(interval)
 

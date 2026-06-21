@@ -18,6 +18,8 @@ logs/*.log.*
 # Runtime state written by the UI / paper trader
 config/ui_overrides.json
 .trader.pid
+logs/paper_history.csv
+logs/paper_orders.csv
 
 # pytest / coverage
 .pytest_cache/

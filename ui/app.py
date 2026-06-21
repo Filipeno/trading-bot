@@ -152,6 +152,38 @@ def _tail_log(n: int = 50) -> list[str]:
 
 
 OVERRIDES_PATH = ROOT / "config" / "ui_overrides.json"
+PAPER_HISTORY = ROOT / "logs" / "paper_history.csv"
+PAPER_ORDERS = ROOT / "logs" / "paper_orders.csv"
+
+
+def _read_paper_history():
+    """Return (history_df, orders_df, meta) the running paper trader recorded."""
+    import csv as _csv
+    if not PAPER_HISTORY.exists():
+        return None, None, {}
+    meta = {}
+    try:
+        with open(PAPER_HISTORY, encoding="utf-8") as f:
+            first = f.readline()
+        if first.startswith("# meta"):
+            parts = list(_csv.reader([first]))[0]
+            # ["# meta", symbol, timeframe, strategy, initial_capital, leverage]
+            if len(parts) >= 6:
+                meta = {"symbol": parts[1], "timeframe": parts[2], "strategy": parts[3],
+                        "initial_capital": float(parts[4]), "leverage": int(parts[5])}
+        hist = pd.read_csv(PAPER_HISTORY, skiprows=1)
+        if not hist.empty:
+            hist["timestamp"] = pd.to_datetime(hist["timestamp"], utc=True, errors="coerce")
+            hist = hist.dropna(subset=["timestamp"])
+        orders = None
+        if PAPER_ORDERS.exists():
+            orders = pd.read_csv(PAPER_ORDERS)
+            if not orders.empty:
+                orders["timestamp"] = pd.to_datetime(orders["timestamp"], utc=True, errors="coerce")
+                orders = orders.dropna(subset=["timestamp"])
+        return hist, orders, meta
+    except Exception:
+        return None, None, meta
 
 
 def _write_overrides(overrides: dict) -> None:
@@ -1192,6 +1224,71 @@ with tab_paper:
             _start_trader()
             time.sleep(1.5)
             st.rerun()
+
+    # ── Live performance (real values recorded by the trader) ─────────────
+    st.divider()
+    st.subheader("📈 Live performance")
+    _hist, _orders, _meta = _read_paper_history()
+
+    if _hist is None or len(_hist) == 0:
+        st.caption(
+            "No data yet. Once the paper trader runs, it records a real portfolio "
+            "snapshot every candle here — equity, price, and each simulated trade. "
+            "On a 15m timeframe that's one point every 15 minutes, so the charts fill in over time."
+        )
+    else:
+        init_cap = _meta.get("initial_capital", float(_hist["equity"].iloc[0]))
+        last = _hist.iloc[-1]
+        equity_now = float(last["equity"])
+        ret_pct = (equity_now - init_cap) / init_cap * 100 if init_cap else 0.0
+        n_orders = 0 if _orders is None else len(_orders)
+
+        k1, k2, k3, k4 = st.columns(4)
+        k1.metric("Portfolio value", f"${equity_now:,.2f}", f"{ret_pct:+.2f}%")
+        k2.metric("Cash", f"${float(last['cash']):,.2f}")
+        k3.metric("Position", f"{float(last['position']):.6f}")
+        k4.metric("Trades", str(n_orders))
+        st.caption(
+            f"Started from **${init_cap:,.0f}** · {_meta.get('symbol','')} "
+            f"{_meta.get('timeframe','')} · strategy **{_STRATEGY_LABELS.get(_meta.get('strategy',''), _meta.get('strategy',''))}**"
+            f"{' · ' + str(_meta.get('leverage')) + '×' if _meta.get('leverage', 1) > 1 else ''} · "
+            f"{len(_hist)} snapshots recorded"
+        )
+
+        # Price + trade markers (real recorded prices & fills)
+        pf = go.Figure()
+        pf.add_trace(go.Scatter(
+            x=_hist["timestamp"], y=_hist["price"], mode="lines",
+            name="Price", line=dict(color="#888", width=1.5)))
+        if _orders is not None and len(_orders) > 0:
+            buys = _orders[_orders["side"] == "buy"]
+            sells = _orders[_orders["side"] == "sell"]
+            if len(buys):
+                pf.add_trace(go.Scatter(
+                    x=buys["timestamp"], y=buys["price"], mode="markers", name="Buy",
+                    marker=dict(symbol="triangle-up", size=12, color="#22cc88")))
+            if len(sells):
+                pf.add_trace(go.Scatter(
+                    x=sells["timestamp"], y=sells["price"], mode="markers", name="Sell",
+                    marker=dict(symbol="triangle-down", size=12, color="#ff6b6b")))
+        pf.update_layout(
+            title=f"{_meta.get('symbol','')} price & simulated trades (live)",
+            height=300, margin=dict(l=0, r=0, t=36, b=0),
+            legend=dict(orientation="h", y=1.15), hovermode="x unified")
+        st.plotly_chart(pf, width="stretch")
+
+        # Portfolio equity over time, vs starting budget
+        ef = go.Figure()
+        ef.add_trace(go.Scatter(
+            x=_hist["timestamp"], y=_hist["equity"], mode="lines", name="Portfolio ($)",
+            line=dict(color="#00d4aa", width=2), fill="tozeroy",
+            fillcolor="rgba(0,212,170,0.07)"))
+        ef.add_hline(y=init_cap, line_dash="dot", line_color="#888",
+                     annotation_text="starting budget", annotation_position="bottom right")
+        ef.update_layout(
+            title="Portfolio value over time", height=260,
+            margin=dict(l=0, r=0, t=36, b=0), hovermode="x unified", showlegend=False)
+        st.plotly_chart(ef, width="stretch")
 
     # ── Log viewer ────────────────────────────────────────────────────────
     st.divider()
